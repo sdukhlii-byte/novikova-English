@@ -92,16 +92,16 @@ async def run(db_holder: dict) -> None:
         bound = Update.model_validate(update.model_dump(exclude_none=True), context={"bot": bot})
         await dp.feed_update(bot, bound)
 
-    async def say(user: User, text: str, reply_to: int | None = None):
-        chat = Chat(id=user.id, type="private")
+    async def say(user: User, text: str, reply_to: int | None = None, in_chat: Chat | None = None):
+        chat = in_chat or Chat(id=user.id, type="private")
         ents = [MessageEntity(type="bot_command", offset=0, length=len(text.split()[0]))] if text.startswith("/") else None
         reply = Message(message_id=reply_to, date=datetime.now(), chat=chat, from_user=bot_user, text="x") if reply_to else None
         m = Message(message_id=next(_ids), date=datetime.now(), chat=chat, from_user=user, text=text,
                     entities=ents, reply_to_message=reply)
         await feed(Update(update_id=next(n), message=m))
 
-    async def tap(user: User, data: str, msg_id: int = 1):
-        chat = Chat(id=user.id, type="private")
+    async def tap(user: User, data: str, msg_id: int = 1, in_chat: Chat | None = None):
+        chat = in_chat or Chat(id=user.id, type="private")
         m = Message(message_id=msg_id, date=datetime.now(), chat=chat, from_user=bot_user, text="x")
         cb = CallbackQuery(id=str(next(n)), from_user=user, chat_instance="ci", data=data, message=m)
         await feed(Update(update_id=next(n), callback_query=cb))
@@ -400,6 +400,55 @@ async def run(db_holder: dict) -> None:
     assert parse_trial("25.10 18:00", tz, ref)[0] == int(datetime(2026, 10, 25, 18, 0, tzinfo=tz).timestamp())
     assert parse_trial("3.1 9.30 заметка", tz, ref)[1] == "заметка"
     assert parse_trial("пятница", tz, ref) is None
+
+    # 9. все заявки в одну группу: карточки, статусы, пробный и переписка идут через группу
+    import dataclasses
+    GROUP = -1001234567890
+    group = Chat(id=GROUP, type="supergroup", title="Заявки")
+    dp.workflow_data["cfg"] = dataclasses.replace(cfg, teacher_chat_id=GROUP, admin_ids=frozenset({TEACHER, 999}))
+    client = User(id=500, is_bot=False, first_name="Мария Г")  # без username → телефон обязателен
+    stranger = User(id=600, is_bot=False, first_name="Случайный", username="stranger")  # участник группы, не сотрудник
+
+    mark = len(session.log)
+    await tap(client, "lead:start")
+    await say(client, "Мария")
+    await tap(client, "lead:c:0")
+    await say(client, "+49 151 2345678")
+    await tap(client, "lead:send")
+    lead_g = await db.latest_lead(500)
+    assert lead_g and lead_g["card_chat_id"] == GROUP, lead_g
+    assert any(c == GROUP and "Заявка #" in t for nme, c, t, _ in session.log[mark:]), "карточка не ушла в группу"
+    assert not any(c == TEACHER and "Заявка #" in t for nme, c, t, _ in session.log[mark:]), "карточка ушла в личку"
+
+    # посторонний участник группы не может менять статусы и не попадает в воронку
+    await tap(stranger, f"st:paid:{lead_g['id']}", msg_id=lead_g["card_message_id"], in_chat=group)
+    await say(stranger, "/stats", in_chat=group)
+    assert (await db.get_lead(lead_g["id"]))["status"] == "new"
+    assert await db.get_user(600) is None, "участник группы попал в клиентов"
+
+    # преподаватель (в ADMIN_IDS) меняет статус из группы
+    await tap(teacher, f"st:contacted:{lead_g['id']}", msg_id=lead_g["card_message_id"], in_chat=group)
+    assert (await db.get_lead(lead_g["id"]))["status"] == "contacted"
+
+    # назначение пробного из группы: без ForceReply, клиент получает подтверждение
+    mark = len(session.log)
+    await tap(teacher, f"st:trial:{lead_g['id']}", msg_id=lead_g["card_message_id"], in_chat=group)
+    prompt = [m for nme, c, t, m in session.log[mark:] if c == GROUP and "Отправьте дату" in t]
+    assert prompt and prompt[0] is None, "в группе не должно быть ForceReply"
+    await say(teacher, "26.12 19:00 Zoom", reply_to=1, in_chat=group)
+    assert (await db.get_lead(lead_g["id"]))["status"] == "trial"
+    assert any("Пробный урок назначен" in t for t in sent_to(500, mark))
+
+    # переписка: клиент пишет боту → в группу; сотрудник отвечает reply → клиенту; посторонний не может
+    mark = len(session.log)
+    await say(client, "Можно перенести на час позже?")
+    assert any(c == GROUP and "перенести на час позже" in t for nme, c, t, _ in session.log[mark:])
+    rid = (await db._all("SELECT message_id FROM relay WHERE chat_id=? ORDER BY rowid DESC LIMIT 1", (GROUP,)))[0]["message_id"]
+    await say(stranger, "Привет от постороннего", reply_to=rid, in_chat=group)
+    assert not any("постороннего" in t for t in sent_to(500, mark)), "посторонний написал клиенту через бота"
+    await say(teacher, "Да, конечно, на 20:00.", reply_to=rid, in_chat=group)
+    assert any("на 20:00" in t for t in sent_to(500, mark))
+    dump("ГРУППА ЗАЯВОК", mark)
 
     print("\n✅ SMOKE TEST PASSED")
 

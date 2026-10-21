@@ -72,7 +72,8 @@ async def cb_status(cb: CallbackQuery, db: DB, bot: Bot, cfg: Settings, sheets: 
             "<code>25.10 18:00</code>\n"
             "Можно добавить ссылку или заметку для клиента:\n"
             "<code>25.10 18:00 Zoom: https://...</code>",
-            reply_markup=ForceReply(selective=True),
+            # в личке показываем поле ответа; в группе ForceReply адресовался бы не тому человеку
+            reply_markup=ForceReply(selective=True) if cb.message.chat.type == "private" else None,
         )
         return
 

@@ -1,0 +1,38 @@
+# Render Blueprint: фоновый воркер (long polling) + постоянный диск для базы SQLite.
+# Подключение: Dashboard → New → Blueprint → выберите репозиторий.
+# Секреты (sync: false) Render спросит при создании, значения вводятся в панели, а не в этом файле.
+services:
+  - type: worker
+    name: english-tutor-bot
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter            # диск и фоновые воркеры недоступны на бесплатном плане
+    region: frankfurt        # ближе к аудитории в Европе
+    autoDeploy: true
+    disk:
+      name: bot-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: DB_PATH
+        value: /data/bot.db
+      - key: BOT_TOKEN
+        sync: false
+      - key: TEACHER_CHAT_ID
+        sync: false
+      - key: ADMIN_IDS
+        sync: false
+      - key: GOOGLE_SHEET_ID
+        sync: false
+      - key: GOOGLE_CREDS_B64
+        sync: false
+      - key: PRIVACY_URL
+        sync: false
+      - key: TEACHER_TZ
+        value: Europe/Moscow
+      - key: FOLLOWUP_TZ
+        value: Europe/Berlin
+      - key: CONTACT_USERNAME
+        value: Stanley_Berks
+      - key: FOLLOWUPS_ENABLED
+        value: "1"
