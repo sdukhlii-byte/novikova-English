@@ -9,8 +9,8 @@ from . import texts as T
 
 def main_menu() -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
-    b.button(text="▶️ Получить рекомендацию", callback_data="quiz:start")
-    b.button(text="📅 Записаться на пробный урок", callback_data="lead:start")
+    b.button(text="▶️ Подобрать программу (6 вопросов, 1 мин)", callback_data="quiz:start")
+    b.button(text="📅 Сразу записаться на пробный", callback_data="lead:start")
     b.button(text="👩‍🏫 О преподавателе", callback_data="menu:about")
     if T.has_reviews():
         b.button(text="⭐ Отзывы", callback_data="menu:reviews")
@@ -37,10 +37,10 @@ def after_result() -> InlineKeyboardMarkup:
 
 def after_about() -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
-    b.button(text="📅 Записаться на пробный урок", callback_data="lead:start")
+    b.button(text="▶️ Подобрать программу (6 вопросов, 1 мин)", callback_data="quiz:start")
+    b.button(text="📅 Сразу записаться на пробный", callback_data="lead:start")
     if T.has_reviews():
         b.button(text="⭐ Отзывы", callback_data="menu:reviews")
-    b.button(text="▶️ Получить рекомендацию", callback_data="quiz:start")
     b.adjust(1)
     return b.as_markup()
 
