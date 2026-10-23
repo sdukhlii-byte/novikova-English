@@ -88,24 +88,18 @@ python -m bot.main
 
 Переменные окружения: `PRIVACY_URL` (ссылка на политику конфиденциальности, для рекламы в ЕС желательно иметь), `TEACHER_TZ` (часовой пояс преподавателя, по умолчанию Москва: по нему она назначает время пробного; клиенту из Европы бот показывает время ещё и по его часам, страну он указывает в заявке).
 
-## Деплой на Render
+## Деплой на Railway
 
-Бот работает на long polling: порт и вебхук не нужны, поэтому на Render это **Background Worker**, а не Web Service.
+Бот работает на long polling: порт и вебхук не нужны.
 
-**Вариант 1: через Blueprint (проще всего).** В репозитории лежит `render.yaml`.
 1. Загрузите репозиторий на GitHub (файл `.env` не загружайте, он в `.gitignore`).
-2. Render → **New → Blueprint** → выберите репозиторий. Render создаст воркер и диск.
-3. Render попросит значения секретов: `BOT_TOKEN`, `TEACHER_CHAT_ID`, `ADMIN_IDS`, `GOOGLE_SHEET_ID`, `GOOGLE_CREDS_B64`, `PRIVACY_URL`. Что неизвестно (например, id группы), оставьте пустым и впишите позже в **Environment**.
+2. Railway → **New Project → Deploy from GitHub repo**. Используется `Dockerfile`, команда запуска `python -m bot.main`.
+3. Вкладка **Variables → Raw Editor**: вставьте переменные из `.env.example` (`BOT_TOKEN`, `TEACHER_CHAT_ID`, `ADMIN_IDS`, `DB_PATH=/data/bot.db`, `GOOGLE_SHEET_ID`, `GOOGLE_CREDS_B64`, `PRIVACY_URL`, `TEACHER_TZ`, `FOLLOWUP_TZ`, `FOLLOWUPS_ENABLED`, `CONTACT_USERNAME`).
+4. **Важно:** сервис → **Settings → Volumes → Add Volume**, Mount Path `/data`. Без тома база заявок стирается при каждом деплое.
+5. В **Settings → Networking** публичный домен создавать не нужно. Запускайте ровно **один** экземпляр (Replicas = 1): два бота с одним токеном дают ошибку Telegram `Conflict`, не запускайте тот же токен локально.
+6. После деплоя напишите боту `/id` (и в группе заявок тоже), впишите полученные id в `TEACHER_CHAT_ID` и `ADMIN_IDS`; Railway перезапустит сервис сам.
 
-**Вариант 2: вручную.** New → **Background Worker** → репозиторий → Runtime **Docker** (используется `Dockerfile`, команда запуска `python -m bot.main`). Тариф **Starter** или выше. Вкладка **Disks → Add Disk**: Mount Path `/data`, 1 GB. Вкладка **Environment**: переменные из `.env.example`, в том числе `DB_PATH=/data/bot.db`.
-
-**Важно.**
-- **Диск обязателен.** Без него SQLite-база (заявки, состояние диалогов, статистика) стирается при каждом деплое. Диски доступны только на платных тарифах; на бесплатном плане фоновых воркеров нет.
-- **Один экземпляр.** Два одновременных бота с одним токеном дают ошибку Telegram `Conflict`. Сервис с диском Render и так не масштабирует, но не запускайте тот же токен ещё и локально, пока бот работает на Render.
-- **Первый запуск.** После деплоя напишите боту `/id`, возьмите оттуда id (и id группы, если заявки идут в группу), впишите в `TEACHER_CHAT_ID` и `ADMIN_IDS` в Environment. Render перезапустит воркер сам.
-- **Google credentials.** Панель Render ломает многострочный JSON. Закодируйте ключ в base64 и вставьте в `GOOGLE_CREDS_B64`: `base64 -w0 key.json` (macOS: `base64 -i key.json`).
-- **Бэкап базы.** Диск Render делает снимки, но заявки также дублируются в Google Sheets и выгружаются командой `/export`.
-- **Логи.** Вкладка **Logs** воркера. Строка `Автодогрев запущен` означает, что всё поднялось.
+`GOOGLE_CREDS_B64`: `base64 -w0 key.json` (macOS: `base64 -i key.json`). Логи: вкладка **Deployments → View logs**, строка `Автодогрев запущен` означает, что всё поднялось.
 
 ## Google Sheets (по желанию)
 
